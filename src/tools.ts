@@ -108,7 +108,7 @@ export function createServer() {
       const p = props();
       const units = await foodUnits(env, p);
       const unit = findUnit(units, a.unit) ?? (a.unit === "serving" ? findUnit(units, "gram") : undefined);
-      if (!unit) throw new Error(`No food unit matches "${a.unit}". Call list_food_units to see the options.`);
+      if (!unit) throw new Error(`No food unit matches "${a.unit}" (${units.length} units known). Call list_food_units to see the options.`);
       const start = a.eaten_at ? new Date(a.eaten_at) : new Date();
       const end = new Date(start.getTime() + 15 * 60_000);
       const nutrients = [

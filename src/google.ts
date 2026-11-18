@@ -177,8 +177,19 @@ function unitText(u: any): string {
   return JSON.stringify(rest).toLowerCase();
 }
 
+/** The unit's resource name. Searches the whole object, since the response shape is undocumented. */
 export function unitName(u: any): string {
-  return u?.name ?? u?.dataPointName;
+  const RE = /dataTypes\/food-measurement-unit\/dataPoints\/[^/"]+$/;
+  const walk = (v: any): string | undefined => {
+    if (typeof v === "string") return RE.test(v) ? v : undefined;
+    if (v && typeof v === "object") for (const x of Object.values(v)) { const hit = walk(x); if (hit) return hit; }
+    return undefined;
+  };
+  const found = walk(u);
+  if (found) return found.replace(/^users\/[^/]+\//, "users/me/");
+  const id = u?.id ?? u?.dataPointId;
+  if (id) return `users/me/dataTypes/food-measurement-unit/dataPoints/${id}`;
+  throw new Error(`Can't find the resource name of food unit: ${JSON.stringify(u).slice(0, 400)}`);
 }
 
 /** Finds the unit matching a word like "serving", "gram" or "piece"; exact display-name match first. */
