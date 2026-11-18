@@ -41,15 +41,27 @@ function jwtSecondsLeft(jwt: string): number | undefined {
   }
 }
 
-export async function garminFetch(env: Env, path: string): Promise<any> {
+async function garminRequest(env: Env, path: string, accept: string): Promise<Response> {
   let token = await garminToken(env);
-  let res = await fetch(`${BASE}${path}`, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+  let res = await fetch(`${BASE}${path}`, { headers: { Authorization: `Bearer ${token}`, Accept: accept } });
   if (res.status === 401) {
     // Cached token went stale (key regenerated?): drop it and try once more.
     await env.OAUTH_KV.delete(CACHE_KEY);
     token = await garminToken(env);
-    res = await fetch(`${BASE}${path}`, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    res = await fetch(`${BASE}${path}`, { headers: { Authorization: `Bearer ${token}`, Accept: accept } });
   }
+  return res;
+}
+
+/** Binary download (e.g. the original FIT file, which Garmin wraps in a ZIP). */
+export async function garminFetchBytes(env: Env, path: string): Promise<Uint8Array> {
+  const res = await garminRequest(env, path, "application/octet-stream, application/zip, */*");
+  if (!res.ok) throw new Error(`Garmin ${res.status} on ${path}: ${(await res.text()).slice(0, 300)}`);
+  return new Uint8Array(await res.arrayBuffer());
+}
+
+export async function garminFetch(env: Env, path: string): Promise<any> {
+  const res = await garminRequest(env, path, "application/json");
   const text = await res.text();
   if (!res.ok) throw new Error(`Garmin ${res.status} on ${path}: ${text.slice(0, 300)}`);
   return text ? JSON.parse(text) : null;
