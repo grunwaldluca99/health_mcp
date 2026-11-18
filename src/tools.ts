@@ -4,7 +4,7 @@ import { env as workerEnv } from "cloudflare:workers";
 import { z } from "zod";
 import type { Env, Props } from "./env";
 import { garminFetch, trimActivity } from "./garmin";
-import { DATA_TYPES, type DataType, dailyRollup, findUnit, foodUnits, healthFetch, listPoints, unitName } from "./google";
+import { DATA_TYPES, type DataType, dailyRollup, foodUnitsPage, healthFetch, listPoints, resolveFoodUnit } from "./google";
 
 const env = workerEnv as unknown as Env;
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe("YYYY-MM-DD, your local date");
@@ -106,9 +106,8 @@ export function createServer() {
     },
     async (a) => {
       const p = props();
-      const units = await foodUnits(env, p);
-      const unit = findUnit(units, a.unit) ?? (a.unit === "serving" ? findUnit(units, "gram") : undefined);
-      if (!unit) throw new Error(`No food unit matches "${a.unit}" (${units.length} units known). Call list_food_units to see the options.`);
+      const unit = await resolveFoodUnit(env, p, a.unit === "serving" ? ["serving", "gram"] : [a.unit]);
+      if (!unit) throw new Error(`No food unit matches "${a.unit}". Call list_food_units to see the options.`);
       const start = a.eaten_at ? new Date(a.eaten_at) : new Date();
       const end = new Date(start.getTime() + 15 * 60_000);
       const nutrients = [
@@ -124,7 +123,7 @@ export function createServer() {
           ...(a.carbs_g !== undefined && { totalCarbohydrate: { grams: a.carbs_g } }),
           ...(a.fat_g !== undefined && { totalFat: { grams: a.fat_g } }),
           ...(nutrients.length && { nutrients }),
-          serving: { amount: a.amount, foodMeasurementUnit: unitName(unit) },
+          serving: { amount: a.amount, foodMeasurementUnit: unit },
         },
       };
       const res = await healthFetch(env, p, "/dataTypes/nutrition-log/dataPoints", { method: "POST", body: JSON.stringify(body) });
@@ -135,13 +134,13 @@ export function createServer() {
   server.registerTool(
     "list_food_units",
     {
-      description: "List the measurement units Google Health accepts for food logs (serving, gram, cup, ...). Optionally filter by a word.",
-      inputSchema: { contains: z.string().optional() },
+      description: "List one page of the measurement units Google Health accepts for food logs (serving, gram, cup, ...). Pass next_page_token to see more.",
+      inputSchema: { contains: z.string().optional(), next_page_token: z.string().optional() },
     },
-    async ({ contains }) => {
-      const units = await foodUnits(env, props());
+    async ({ contains, next_page_token }) => {
+      const { units, nextPageToken } = await foodUnitsPage(env, props(), next_page_token);
       const hits = contains ? units.filter((u) => JSON.stringify(u).toLowerCase().includes(contains.toLowerCase())) : units;
-      return json({ count: hits.length, units: hits.slice(0, 100) });
+      return json({ count: hits.length, units: hits.slice(0, 100), next_page_token: nextPageToken || undefined });
     },
   );
 

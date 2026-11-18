@@ -151,24 +151,41 @@ export async function dailyRollup(env: Env, props: Props, type: DataType, startD
 
 /**
  * Google requires every food log to name a measurement unit (a resource like
- * users/me/dataTypes/food-measurement-unit/dataPoints/123). The list is per-account
- * and undocumented in shape, so we fetch it once, cache it in KV for a day, and
- * match units by the words in their JSON.
+ * users/me/dataTypes/food-measurement-unit/dataPoints/123). The list is long and its
+ * shape undocumented, so we page through it only until a unit matches, and cache the
+ * match in KV. (Cloudflare's free tier allows 50 outgoing requests per call.)
  */
-export async function foodUnits(env: Env, props: Props): Promise<any[]> {
-  const cached = await env.OAUTH_KV.get("google:food-units", "json");
-  if (cached) return cached as any[];
-  const units: any[] = [];
+export async function foodUnitsPage(env: Env, props: Props, pageToken = ""): Promise<{ units: any[]; nextPageToken: string }> {
+  const q = new URLSearchParams({ pageSize: "1000" });
+  if (pageToken) q.set("pageToken", pageToken);
+  const res = await healthFetch(env, props, `/dataTypes/food-measurement-unit/dataPoints?${q}`);
+  return { units: res.dataPoints ?? [], nextPageToken: res.nextPageToken ?? "" };
+}
+
+/** Returns the resource name of the first word that matches (in order of preference), scanning at most 20 pages. */
+export async function resolveFoodUnit(env: Env, props: Props, words: string[]): Promise<string | undefined> {
+  const keys = words.map((w) => `google:food-unit:${w.toLowerCase().trim()}`);
+  for (const key of keys) {
+    const cached = await env.OAUTH_KV.get(key);
+    if (cached) return cached;
+  }
+  const found: (string | undefined)[] = words.map(() => undefined);
   let pageToken = "";
-  do {
-    const q = new URLSearchParams({ pageSize: "1000" });
-    if (pageToken) q.set("pageToken", pageToken);
-    const res = await healthFetch(env, props, `/dataTypes/food-measurement-unit/dataPoints?${q}`);
-    units.push(...(res.dataPoints ?? []));
-    pageToken = res.nextPageToken ?? "";
-  } while (pageToken && units.length < 5000);
-  if (units.length) await env.OAUTH_KV.put("google:food-units", JSON.stringify(units), { expirationTtl: 86400 });
-  return units;
+  for (let page = 0; page < 20 && !found[0]; page++) {
+    const res = await foodUnitsPage(env, props, pageToken);
+    words.forEach((w, i) => {
+      if (!found[i]) {
+        const hit = findUnit(res.units, w);
+        if (hit) found[i] = unitName(hit);
+      }
+    });
+    pageToken = res.nextPageToken;
+    if (!pageToken) break;
+  }
+  const i = found.findIndex(Boolean);
+  if (i < 0) return undefined;
+  await env.OAUTH_KV.put(keys[i], found[i]!, { expirationTtl: 30 * 86400 });
+  return found[i];
 }
 
 /** Text describing a unit, without its id, for matching (e.g. "serving", "gram"). */
