@@ -1,8 +1,8 @@
 # health_mcp
 
-A personal MCP server that lets Claude read your health data and log food. It runs free on Cloudflare Workers.
+A personal MCP server that lets Claude read your health data. It runs free on Cloudflare Workers.
 
-- **Google Health API** (the successor to the Fitbit Web API): sleep, heart rate, HRV, SpO2, steps, weight, and food logging (read and write)
+- **Google Health API** (the successor to the Fitbit Web API): sleep, heart rate, HRV, SpO2, steps, weight, and food logs (read only)
 - **Garmin Personal API**: workouts and VO2max (read only)
 
 Only one Google account, the one in `ALLOWED_EMAIL`, can sign in.
@@ -29,8 +29,6 @@ Claude ──OAuth──▶ /authorize ──▶ consent page ──▶ Google s
 |---|---|---|
 | `get_health_data` | Google | Raw de-duplicated data points (sleep, HRV, resting HR, weight, …) for a date range |
 | `get_daily_totals` | Google | Per-day steps, distance, active zone minutes, heart rate, weight |
-| `log_food` | Google | Logs a meal with its calories and macros |
-| `delete_food_logs` | Google | Deletes food log entries |
 | `get_workouts` | Garmin | Lists workouts with their key metrics |
 | `get_workout` | Garmin | Gives the full summary of one workout |
 | `get_vo2max` | Garmin | Gives VO2max per day (running and cycling) |
@@ -68,5 +66,4 @@ In Claude, go to **Settings → Connectors → Add custom connector**. Paste `ht
 ## Known limits
 - Garmin keys expire after at most 1 year. When yours does, make a new one and run `wrangler secret put GARMIN_API_KEY`.
 - Garmin's Personal API is read only, so you can't push workouts to the watch.
-- Food entries without a food ID can't be edited, only deleted and logged again.
 - The Google Health API caps rollups at 90 days per request, or 14 days for heart rate and active zone minutes.

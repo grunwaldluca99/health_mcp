@@ -12,7 +12,6 @@ export const GOOGLE_SCOPES = [
   `${G}health_metrics_and_measurements.readonly`,
   `${G}sleep.readonly`,
   `${G}nutrition.readonly`,
-  `${G}nutrition.writeonly`,
 ];
 
 export interface GoogleTokens {
@@ -147,71 +146,4 @@ export async function dailyRollup(env: Env, props: Props, type: DataType, startD
     method: "POST",
     body: JSON.stringify({ range: { start: civil(startDate), end: civil(nextDay(endDate)) }, windowSizeDays: 1 }),
   });
-}
-
-/**
- * Google requires every food log to name a measurement unit (a resource like
- * users/me/dataTypes/food-measurement-unit/dataPoints/123). The list is long and its
- * shape undocumented, so we page through it only until a unit matches, and cache the
- * match in KV. (Cloudflare's free tier allows 50 outgoing requests per call.)
- */
-export async function foodUnitsPage(env: Env, props: Props, pageToken = ""): Promise<{ units: any[]; nextPageToken: string }> {
-  const q = new URLSearchParams({ pageSize: "1000" });
-  if (pageToken) q.set("pageToken", pageToken);
-  const res = await healthFetch(env, props, `/dataTypes/food-measurement-unit/dataPoints?${q}`);
-  return { units: res.dataPoints ?? [], nextPageToken: res.nextPageToken ?? "" };
-}
-
-/** Returns the resource name of the first word that matches (in order of preference), scanning at most 20 pages. */
-export async function resolveFoodUnit(env: Env, props: Props, words: string[]): Promise<string | undefined> {
-  const keys = words.map((w) => `google:food-unit:${w.toLowerCase().trim()}`);
-  for (const key of keys) {
-    const cached = await env.OAUTH_KV.get(key);
-    if (cached) return cached;
-  }
-  const found: (string | undefined)[] = words.map(() => undefined);
-  let pageToken = "";
-  for (let page = 0; page < 20 && !found[0]; page++) {
-    const res = await foodUnitsPage(env, props, pageToken);
-    words.forEach((w, i) => {
-      if (!found[i]) {
-        const hit = findUnit(res.units, w);
-        if (hit) found[i] = unitName(hit);
-      }
-    });
-    pageToken = res.nextPageToken;
-    if (!pageToken) break;
-  }
-  const i = found.findIndex(Boolean);
-  if (i < 0) return undefined;
-  await env.OAUTH_KV.put(keys[i], found[i]!, { expirationTtl: 30 * 86400 });
-  return found[i];
-}
-
-/** Text describing a unit, without its id, for matching (e.g. "serving", "gram"). */
-function unitText(u: any): string {
-  const { name, dataPointName, ...rest } = u ?? {};
-  return JSON.stringify(rest).toLowerCase();
-}
-
-/** The unit's resource name. Searches the whole object, since the response shape is undocumented. */
-export function unitName(u: any): string {
-  const RE = /dataTypes\/food-measurement-unit\/dataPoints\/[^/"]+$/;
-  const walk = (v: any): string | undefined => {
-    if (typeof v === "string") return RE.test(v) ? v : undefined;
-    if (v && typeof v === "object") for (const x of Object.values(v)) { const hit = walk(x); if (hit) return hit; }
-    return undefined;
-  };
-  const found = walk(u);
-  if (found) return found.replace(/^users\/[^/]+\//, "users/me/");
-  const id = u?.id ?? u?.dataPointId;
-  if (id) return `users/me/dataTypes/food-measurement-unit/dataPoints/${id}`;
-  throw new Error(`Can't find the resource name of food unit: ${JSON.stringify(u).slice(0, 400)}`);
-}
-
-/** Finds the unit matching a word like "serving", "gram" or "piece"; exact display-name match first. */
-export function findUnit(units: any[], word: string): any | undefined {
-  const w = word.toLowerCase().trim();
-  const exact = units.find((u) => new RegExp(`"${w}s?"`).test(unitText(u)));
-  return exact ?? units.find((u) => unitText(u).includes(w));
 }
