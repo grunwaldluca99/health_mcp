@@ -53,7 +53,8 @@ In Garmin Connect on the web, go to **Settings → Personal API Token** ([direct
 npm install
 npx wrangler login
 npx wrangler kv namespace create OAUTH_KV      # paste the id into wrangler.jsonc
-# edit wrangler.jsonc: MCP_RESOURCE (your workers.dev URL + /mcp) and ALLOWED_EMAIL
+# edit wrangler.jsonc: MCP_RESOURCE (your workers.dev URL + /mcp)
+npx wrangler secret put ALLOWED_EMAIL          # your Gmail; a secret so it stays out of git
 npx wrangler secret put GOOGLE_CLIENT_ID
 npx wrangler secret put GOOGLE_CLIENT_SECRET
 npx wrangler secret put GARMIN_API_KEY
