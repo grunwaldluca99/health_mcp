@@ -22,7 +22,8 @@ export const AuthHandler = {
       if (url.pathname === "/authorize" && request.method === "GET") return await showConsent(request, env);
       if (url.pathname === "/authorize" && request.method === "POST") return await approve(request, env);
       if (url.pathname === "/callback") return await callback(request, env);
-      if (url.pathname === "/") return text("Personal health MCP server. Connect at /mcp.");
+      if (url.pathname === "/") return text("Personal health MCP server for one person. Connect at /mcp.");
+      if (url.pathname === "/privacy") return text(PRIVACY);
       return text("Not found", 404);
     } catch (error) {
       if (error instanceof AuthorizationError && error.redirectTo) return Response.redirect(error.redirectTo, 302);
@@ -32,6 +33,12 @@ export const AuthHandler = {
     }
   },
 };
+
+const PRIVACY = `Privacy policy - health-mcp
+This is a private server used by a single person (its owner) to let their own AI assistant read their own health data.
+Data from Google Health and Garmin is fetched on request and passed to the owner's AI assistant. It is not stored, sold or shared with anyone else.
+Google OAuth tokens are stored encrypted on Cloudflare only to keep the connection alive, and can be revoked at any time at https://myaccount.google.com/permissions.
+Google user data use complies with the Google API Services User Data Policy, including the Limited Use requirements.`;
 
 const remember = (env: Env) => ({ secret: env.CONSENT_SECRET });
 
