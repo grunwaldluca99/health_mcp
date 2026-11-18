@@ -1,0 +1,5 @@
+# Copy to .dev.vars for local `npm run dev`. Never commit .dev.vars.
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GARMIN_API_KEY=
+CONSENT_SECRET=
