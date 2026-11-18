@@ -127,6 +127,35 @@ export function createServer() {
   );
 
   server.registerTool(
+    "get_strength_sets",
+    {
+      description:
+        "Exercise-level sets for one Garmin strength workout (activityId from get_workouts with activity_type strength_training): exercise, reps, weight in kg, set duration. Rest sets are dropped. Use it to track progressive overload.",
+      inputSchema: { activity_id: z.number().int().positive() },
+    },
+    async ({ activity_id }) => {
+      const r = await garminFetch(env, `/activity-service/activity/${activity_id}/exerciseSets`);
+      const sets = ((r?.exerciseSets ?? []) as any[])
+        .filter((s) => s.setType !== "REST")
+        .map((s, i) => {
+          // Garmin may list several guesses per set; the first one is what the watch (or you) picked.
+          const ex = s.exercises?.[0];
+          return {
+            set: i + 1,
+            exercise: ex?.name ?? ex?.category ?? "UNKNOWN",
+            category: ex?.category,
+            reps: s.repetitionCount,
+            // Garmin stores set weight in grams.
+            weight_kg: typeof s.weight === "number" ? Math.round(s.weight / 10) / 100 : null,
+            duration_s: s.duration != null ? Math.round(s.duration) : null,
+            start: s.startTime,
+          };
+        });
+      return json({ activityId: activity_id, sets });
+    },
+  );
+
+  server.registerTool(
     "get_vo2max",
     {
       description: "Garmin VO2max per day (running/generic and cycling) for a date range.",
