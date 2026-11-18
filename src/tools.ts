@@ -107,10 +107,23 @@ export function createServer() {
   server.registerTool(
     "get_workout",
     {
-      description: "Full Garmin summary for one workout by activityId (from get_workouts), including splits.",
+      description: "Full Garmin summary for one workout by activityId (from get_workouts): power, cadence, running dynamics, training effect, and splits.",
       inputSchema: { activity_id: z.number().int().positive() },
     },
-    async ({ activity_id }) => json(await garminFetch(env, `/activity-service/activity/${activity_id}`)),
+    async ({ activity_id }) => {
+      const a = await garminFetch(env, `/activity-service/activity/${activity_id}`);
+      // Keep the training data; drop profile, image and access-control metadata.
+      return json({
+        activityId: a.activityId,
+        activityName: a.activityName,
+        activityType: a.activityTypeDTO?.typeKey,
+        eventType: a.eventTypeDTO?.typeKey,
+        locationName: a.locationName,
+        timeZone: a.timeZoneUnitDTO?.timeZone,
+        summary: a.summaryDTO,
+        splits: a.splitSummaries,
+      });
+    },
   );
 
   server.registerTool(
