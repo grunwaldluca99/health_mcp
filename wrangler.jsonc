@@ -1,0 +1,21 @@
+{
+  // Cloudflare Worker config. Free tier: 100k requests/day, KV 100k reads + 1k writes/day.
+  "name": "health-mcp",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "kv_namespaces": [
+    // Stores OAuth clients/grants (encrypted) and the cached Garmin access token.
+    // Create with: npx wrangler kv namespace create OAUTH_KV  -> paste the id here.
+    { "binding": "OAUTH_KV", "id": "b50eac0c50d6496186c1d26b1f1b0765" }
+  ],
+  "vars": {
+    // Exactly the URL Claude connects to. Tokens are bound to it.
+    "MCP_RESOURCE": "https://health-mcp.bvph9n47ws.workers.dev/mcp"
+  }
+  // Secrets (never in this file), set with `npx wrangler secret put NAME`:
+  //   ALLOWED_EMAIL (the only Google account allowed to sign in),
+  //   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GARMIN_API_KEY, CONSENT_SECRET
+}
