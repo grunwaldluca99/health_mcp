@@ -11,7 +11,7 @@
   ],
   "vars": {
     // Exactly the URL Claude connects to. Tokens are bound to it.
-    "MCP_RESOURCE": "https://health-mcp.REPLACE_WITH_SUBDOMAIN.workers.dev/mcp",
+    "MCP_RESOURCE": "https://health-mcp.bvph9n47ws.workers.dev/mcp",
     // The only Google account allowed to sign in.
     "ALLOWED_EMAIL": "REPLACE_WITH_YOUR_GMAIL"
   }

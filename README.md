@@ -45,7 +45,7 @@ In Garmin Connect on the web, go to **Settings → Personal API Token** ([direct
 2. Enable the **Google Health API**: https://console.cloud.google.com/apis/library/health.googleapis.com
 3. Set up the **OAuth consent screen**. Choose user type **External**, and add your Gmail under **Test users**.
 4. On **Data Access**, add the Google Health scopes listed in `src/google.ts`.
-5. Under **Credentials**, create an **OAuth client ID** of type *Web application*. Set the redirect URI to `https://health-mcp.<your-subdomain>.workers.dev/callback`.
+5. Under **Credentials**, create an **OAuth client ID** of type *Web application*. Set the redirect URI to `https://health-mcp.bvph9n47ws.workers.dev/callback`.
 6. Under **Audience**, click **Publish app**. If you skip this, Google's sign-in expires every 7 days while the app is in "Testing". An unverified published app works for up to 100 users and shows an "unverified app" warning, which you click through.
 
 ### 3. Cloudflare (free)
@@ -62,7 +62,7 @@ npm run deploy
 ```
 
 ### 4. Connect Claude
-In Claude, go to **Settings → Connectors → Add custom connector**. Paste `https://health-mcp.<your-subdomain>.workers.dev/mcp`, then sign in.
+In Claude, go to **Settings → Connectors → Add custom connector**. Paste `https://health-mcp.bvph9n47ws.workers.dev/mcp`, then sign in.
 
 ## Known limits
 - Garmin keys expire after at most 1 year. When yours does, make a new one and run `wrangler secret put GARMIN_API_KEY`.
