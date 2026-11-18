@@ -14,13 +14,31 @@ async function garminToken(env: Env): Promise<string> {
   const res = await fetch(TOKEN_URL, { method: "POST", headers: { Authorization: `ApiKey ${env.GARMIN_API_KEY}` } });
   const text = await res.text();
   if (!res.ok) throw new Error(`Garmin token exchange ${res.status}: ${text.slice(0, 300)}`);
-  const json = JSON.parse(text);
-  // Field names aren't documented; accept the common spellings.
-  const token: string | undefined = json.access_token ?? json.accessToken ?? json.token;
-  if (!token) throw new Error(`Garmin token response had no token field. Keys: ${Object.keys(json).join(", ")}`);
-  const ttl = Number(json.expires_in ?? json.expiresIn ?? 86400);
+  // Garmin returns the access token as a bare JWT string (not JSON). Handle both shapes.
+  const trimmed = text.trim().replace(/^"|"$/g, "");
+  let token: string | undefined;
+  let ttl = 86400;
+  if (trimmed.startsWith("{")) {
+    const json = JSON.parse(trimmed);
+    token = json.access_token ?? json.accessToken ?? json.token;
+    ttl = Number(json.expires_in ?? json.expiresIn ?? ttl);
+  } else {
+    token = trimmed;
+    ttl = jwtSecondsLeft(trimmed) ?? ttl;
+  }
+  if (!token) throw new Error("Garmin token response had no token");
   await env.OAUTH_KV.put(CACHE_KEY, token, { expirationTtl: Math.max(60, ttl - 600) });
   return token;
+}
+
+/** Seconds until a JWT's exp claim, or undefined if it can't be read. */
+function jwtSecondsLeft(jwt: string): number | undefined {
+  try {
+    const payload = JSON.parse(atob(jwt.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+    return typeof payload.exp === "number" ? Math.floor(payload.exp - Date.now() / 1000) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export async function garminFetch(env: Env, path: string): Promise<any> {

@@ -26,6 +26,20 @@ function checkRange(start: string, end: string, max: number) {
 
 const json = (data: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(data) }] });
 
+/** Drops bookkeeping fields (createTime, updateTime, ...) that only cost the agent tokens. */
+function slim(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(slim);
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) {
+      if (k === "createTime" || k === "updateTime" || k === "startUtcOffset" || k === "endUtcOffset" || k === "shortAwakenings") continue;
+      out[k] = slim(v);
+    }
+    return out;
+  }
+  return value;
+}
+
 export function createServer() {
   const server = new McpServer({ name: "health-mcp", version: "0.1.0" });
 
@@ -47,7 +61,8 @@ export function createServer() {
     },
     async ({ data_type, start_date, end_date, max_points }) => {
       checkRange(start_date, end_date, data_type === "heart-rate" ? 1 : 90);
-      return json(await listPoints(env, props(), data_type, start_date, end_date, max_points));
+      const res = await listPoints(env, props(), data_type, start_date, end_date, max_points);
+      return json({ ...res, points: res.points.map(slim) });
     },
   );
 
