@@ -3,7 +3,8 @@ import { getMcpAuthContext } from "agents/mcp/server";
 import { env as workerEnv } from "cloudflare:workers";
 import { z } from "zod";
 import type { Env, Props } from "./env";
-import { garminFetch, trimActivity } from "./garmin";
+import { garminFetch, garminFetchBytes, trimActivity } from "./garmin";
+import { extractFit, strengthSets } from "./fit";
 import { DATA_TYPES, type DataType, dailyRollup, listPoints } from "./google";
 
 const env = workerEnv as unknown as Env;
@@ -97,10 +98,12 @@ export function createServer() {
     },
     async ({ start_date, end_date, activity_type, limit }) => {
       checkRange(start_date, end_date, 366);
-      const q = new URLSearchParams({ startDate: start_date, endDate: end_date, limit: String(limit) });
-      if (activity_type) q.set("activityType", activity_type);
-      const list = (await garminFetch(env, `/activitylist-service/activities/search/activities?${q}`)) as any[];
-      return json(list.map(trimActivity));
+      // Garmin answers 400 to its own activityType filter on the Personal API, so filter here instead.
+      const q = new URLSearchParams({ startDate: start_date, endDate: end_date, limit: String(activity_type ? 100 : limit) });
+      const list = ((await garminFetch(env, `/activitylist-service/activities/search/activities?${q}`)) as any[]).map(trimActivity);
+      const t = activity_type?.toLowerCase();
+      const hits = t ? list.filter((a) => a.activityType === t || String(a.activityType).endsWith(`_${t}`)) : list;
+      return json(hits.slice(0, limit));
     },
   );
 
@@ -130,27 +133,13 @@ export function createServer() {
     "get_strength_sets",
     {
       description:
-        "Exercise-level sets for one Garmin strength workout (activityId from get_workouts with activity_type strength_training): exercise, reps, weight in kg, set duration. Rest sets are dropped. Use it to track progressive overload.",
+        "Exercise-level sets for one Garmin strength workout (activityId from get_workouts with activity_type strength_training), read from the workout's original FIT file: exercise, reps, weight in kg, set duration. Rest sets are dropped. Use it to track progressive overload.",
       inputSchema: { activity_id: z.number().int().positive() },
     },
     async ({ activity_id }) => {
-      const r = await garminFetch(env, `/activity-service/activity/${activity_id}/exerciseSets`);
-      const sets = ((r?.exerciseSets ?? []) as any[])
-        .filter((s) => s.setType !== "REST")
-        .map((s, i) => {
-          // Garmin may list several guesses per set; the first one is what the watch (or you) picked.
-          const ex = s.exercises?.[0];
-          return {
-            set: i + 1,
-            exercise: ex?.name ?? ex?.category ?? "UNKNOWN",
-            category: ex?.category,
-            reps: s.repetitionCount,
-            // Garmin stores set weight in grams.
-            weight_kg: typeof s.weight === "number" ? Math.round(s.weight / 10) / 100 : null,
-            duration_s: s.duration != null ? Math.round(s.duration) : null,
-            start: s.startTime,
-          };
-        });
+      // The Personal API has no exerciseSets endpoint (404), but the original FIT file holds every set.
+      const zip = await garminFetchBytes(env, `/download-service/files/activity/${activity_id}`);
+      const sets = strengthSets(await extractFit(zip));
       return json({ activityId: activity_id, sets });
     },
   );
