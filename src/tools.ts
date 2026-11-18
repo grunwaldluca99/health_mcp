@@ -4,7 +4,7 @@ import { env as workerEnv } from "cloudflare:workers";
 import { z } from "zod";
 import type { Env, Props } from "./env";
 import { garminFetch, trimActivity } from "./garmin";
-import { DATA_TYPES, type DataType, dailyRollup, healthFetch, listPoints } from "./google";
+import { DATA_TYPES, type DataType, dailyRollup, findUnit, foodUnits, healthFetch, listPoints, unitName } from "./google";
 
 const env = workerEnv as unknown as Env;
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe("YYYY-MM-DD, your local date");
@@ -98,11 +98,17 @@ export function createServer() {
         carbs_g: z.number().min(0).optional(),
         fat_g: z.number().min(0).optional(),
         fiber_g: z.number().min(0).optional(),
+        amount: z.number().positive().default(1).describe("How many units, e.g. 120 with unit gram, or 1 with unit serving"),
+        unit: z.string().default("serving").describe("Unit word, e.g. serving, gram, piece, cup. See list_food_units."),
         eaten_at: z.string().datetime({ offset: true }).optional().describe("ISO time with offset, e.g. 2026-11-18T12:30:00+01:00. Defaults to now."),
       },
       annotations: { destructiveHint: false, readOnlyHint: false },
     },
     async (a) => {
+      const p = props();
+      const units = await foodUnits(env, p);
+      const unit = findUnit(units, a.unit) ?? (a.unit === "serving" ? findUnit(units, "gram") : undefined);
+      if (!unit) throw new Error(`No food unit matches "${a.unit}". Call list_food_units to see the options.`);
       const start = a.eaten_at ? new Date(a.eaten_at) : new Date();
       const end = new Date(start.getTime() + 15 * 60_000);
       const nutrients = [
@@ -118,11 +124,24 @@ export function createServer() {
           ...(a.carbs_g !== undefined && { totalCarbohydrate: { grams: a.carbs_g } }),
           ...(a.fat_g !== undefined && { totalFat: { grams: a.fat_g } }),
           ...(nutrients.length && { nutrients }),
-          serving: { amount: 1 },
+          serving: { amount: a.amount, foodMeasurementUnit: unitName(unit) },
         },
       };
-      const res = await healthFetch(env, props(), "/dataTypes/nutrition-log/dataPoints", { method: "POST", body: JSON.stringify(body) });
+      const res = await healthFetch(env, p, "/dataTypes/nutrition-log/dataPoints", { method: "POST", body: JSON.stringify(body) });
       return json({ logged: res.response?.name ?? res.name ?? res });
+    },
+  );
+
+  server.registerTool(
+    "list_food_units",
+    {
+      description: "List the measurement units Google Health accepts for food logs (serving, gram, cup, ...). Optionally filter by a word.",
+      inputSchema: { contains: z.string().optional() },
+    },
+    async ({ contains }) => {
+      const units = await foodUnits(env, props());
+      const hits = contains ? units.filter((u) => JSON.stringify(u).toLowerCase().includes(contains.toLowerCase())) : units;
+      return json({ count: hits.length, units: hits.slice(0, 100) });
     },
   );
 

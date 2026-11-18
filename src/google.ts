@@ -148,3 +148,42 @@ export async function dailyRollup(env: Env, props: Props, type: DataType, startD
     body: JSON.stringify({ range: { start: civil(startDate), end: civil(nextDay(endDate)) }, windowSizeDays: 1 }),
   });
 }
+
+/**
+ * Google requires every food log to name a measurement unit (a resource like
+ * users/me/dataTypes/food-measurement-unit/dataPoints/123). The list is per-account
+ * and undocumented in shape, so we fetch it once, cache it in KV for a day, and
+ * match units by the words in their JSON.
+ */
+export async function foodUnits(env: Env, props: Props): Promise<any[]> {
+  const cached = await env.OAUTH_KV.get("google:food-units", "json");
+  if (cached) return cached as any[];
+  const units: any[] = [];
+  let pageToken = "";
+  do {
+    const q = new URLSearchParams({ pageSize: "1000" });
+    if (pageToken) q.set("pageToken", pageToken);
+    const res = await healthFetch(env, props, `/dataTypes/food-measurement-unit/dataPoints?${q}`);
+    units.push(...(res.dataPoints ?? []));
+    pageToken = res.nextPageToken ?? "";
+  } while (pageToken && units.length < 5000);
+  if (units.length) await env.OAUTH_KV.put("google:food-units", JSON.stringify(units), { expirationTtl: 86400 });
+  return units;
+}
+
+/** Text describing a unit, without its id, for matching (e.g. "serving", "gram"). */
+function unitText(u: any): string {
+  const { name, dataPointName, ...rest } = u ?? {};
+  return JSON.stringify(rest).toLowerCase();
+}
+
+export function unitName(u: any): string {
+  return u?.name ?? u?.dataPointName;
+}
+
+/** Finds the unit matching a word like "serving", "gram" or "piece"; exact display-name match first. */
+export function findUnit(units: any[], word: string): any | undefined {
+  const w = word.toLowerCase().trim();
+  const exact = units.find((u) => new RegExp(`"${w}s?"`).test(unitText(u)));
+  return exact ?? units.find((u) => unitText(u).includes(w));
+}
